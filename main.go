@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/u2takey/ffmpeg-go"
 	"os/exec"
+	"strconv"
 )
 
 func main() {
@@ -27,35 +27,50 @@ func main() {
 
 	var cutVideoCmd = &cobra.Command{
 		Use: "cut",
-		Short: "Cut silent parts from a video",
-		Long: "cut [input.mp4] [minimumDecibel (default=-35dB)] [silencepaddingMS (default=100ms)] [removesilenceslongerthanMS (default=1000ms)] [removetalksshorterthanMS (default=100ms)]",
+	
+		Long: "cut [input.mp4] [minimumDecibel (default=-35dB)] [removesilenceslongerthan (default=1s)] [silencepadding (default=0.5s)]",
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			
 			// to check if the first argument is a video file
-			cmdcheck := exec.Command("ffmpeg", "-v", "error", "-i", args[0], "-f", "null", "-")
+			cmdcheck := exec.Command("ffmpeg", "-v", "error", "-i", args[0], "-t", "1", "-f", "null", "-")
 			output, err := cmdcheck.CombinedOutput()
 			if err != nil {
 				fmt.Println("First argument must be a video file.")
 				return
-			}
+			} 
 			
-			cmdstring = ""
+			fmt.Println("man I have no idea if shit works or no")
+			
+			argsv2 := [4]string{"-35", "1", "0.5", "0.1"};
+
 			if len(args) > 1 {
 				for i := 1; i < len(args); i++ {
-					if reflect.TypeOf(args[i]) != "int" {
-						fmt.Println("Optional arguments must be integers.")
+					_, err = strconv.ParseFloat(args[i], 64)
+					
+					if err != nil {
+						fmt.Println("Optional arguments must be float.")
 						return
 					}
-					cmdstring += " " + args[i]
+
+					argsv2[i-1] = args[i]
 				}
-			
-			
 
 			}
-			fmt.Println("cutting video")
 			
-			cmd := exec.Command("ffmpeg", "-i",args[0], "-af", "silencedetect=n="+args[1],)
+			fmt.Println("cutting video")
+
+			ffmpegrun := exec.Command("ffmpeg", "-i",args[0], "-af", "silenceremove=stop_threshold="+argsv2[0]+"dB:stop_duration="+argsv2[1]+":stop_silence="+argsv2[2]+":start_periods=1:stop_periods=-1", "-c:v", "copy", "output.mp4")
+			output, err = ffmpegrun.CombinedOutput()
+			
+			if err != nil {
+				fmt.Println(string(output))
+				fmt.Println("Error cutting video.")
+				fmt.Println(err)
+				return
+			}
+			fmt.Println(string(output))
+			fmt.Println("Cut Successful!")
 
 		},
 	}
