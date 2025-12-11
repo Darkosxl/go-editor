@@ -105,10 +105,12 @@ func main() {
 					end = r.FindString(output_split[i])
 					end = strings.TrimPrefix(r.FindString(output_split[i]), "start: ")
 
-					n3, nerr := f.WriteString("cut_keep:" + start + ":" + end + "\n")
-					check(nerr)
-					fmt.Println(n3)
-
+					// Only write segment if there's actual content to keep (not 0-length)
+					if start != end {
+						n3, nerr := f.WriteString("cut_keep:" + start + ":" + end + "\n")
+						check(nerr)
+						fmt.Println(n3)
+					}
 				}
 
 				if strings.Contains(output_split[i], "end:") {
@@ -130,14 +132,25 @@ func main() {
 			filesegments, err := os.Create("segments.txt")
 			check(err)
 			defer filesegments.Close()
+			prevEnd := 0.0 // Track where the previous segment actually ended (with padding)
 			for scanner.Scan() {
 
 				cutkeep := strings.Split(scanner.Text(), ":")
 				start, _ := strconv.ParseFloat(cutkeep[1], 64)
 				end, _ := strconv.ParseFloat(cutkeep[2], 64)
 
+				// Skip this segment if it overlaps with the previous one
+				if start < prevEnd {
+					// Adjust start to avoid overlap
+					start = prevEnd
+					cutkeep[1] = strconv.FormatFloat(start, 'f', -1, 64)
+				}
+
+				// Only cut if there's meaningful content after adjustment
 				if end-start > mintalk {
-					ffmpegcut := exec.Command("ffmpeg", "-y", "-ss", cutkeep[1], "-i", args[0], "-t", strconv.FormatFloat(end-start+silencepadding, 'f', -1, 64), "-c", "copy", "segment"+strconv.Itoa(counter)+".mp4")
+					duration := end - start + silencepadding
+					// Use re-encoding for precision (remove -c copy)
+					ffmpegcut := exec.Command("ffmpeg", "-y", "-ss", cutkeep[1], "-i", args[0], "-t", strconv.FormatFloat(duration, 'f', -1, 64), "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "segment"+strconv.Itoa(counter)+".mp4")
 					cutOutput, err := ffmpegcut.CombinedOutput()
 					if err != nil {
 						fmt.Println("Segment", counter, "failed. cutkeep:", cutkeep)
@@ -146,6 +159,7 @@ func main() {
 					}
 					filesegments.WriteString("file" + " 'segment" + strconv.Itoa(counter) + ".mp4'\n")
 					counter++
+					prevEnd = start + duration // Update where this segment actually ends
 				}
 			}
 
